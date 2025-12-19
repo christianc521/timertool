@@ -23,6 +23,43 @@ pub enum Animation {
     Empty
 }
 
+impl Animation {
+    // Get next frame and advance animation state
+    // Returns None when animation is complete
+    pub fn next_frame(&mut self) -> Option<FrameType> {
+        match self {
+            Self::Cursor(cursor) => cursor.next_frame(),
+            Self::Sprite(sprite) => sprite.next_frame(),
+            Self::Empty => None,
+        }
+    }
+
+    // Peek at current frame without advancing
+    pub fn current_frame(&self) -> FrameType {
+        match self {
+            Self::Cursor(cursor) => cursor.current_frame(),
+            Self::Sprite(sprite) => sprite.current_frame(),
+            Self::Empty => FrameType::Empty,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        match self {
+            Self::Cursor(cursor) => cursor.frame_index = 0,
+            Self::Sprite(sprite) => sprite.current_frame = 0,
+            Self::Empty => {}
+        }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        match self {
+            Self::Cursor(cursor) => cursor.frame_index >= cursor.frame_count,
+            Self::Sprite(sprite) => sprite.current_frame >= sprite.frame_bytes.frame_count,
+            Self::Empty => true
+        }
+    }
+}
+
 pub trait AnimationEvent {
     fn get_frame(&self) -> FrameType;
 }
@@ -55,11 +92,30 @@ pub struct FrameData {
 // Data to be fetched and stored on boot
 #[derive(Debug)]
 pub struct AnimationMetadata {
+    // Raw RGB565 pixel data (little-endian, all frames concatenated)
     pub data: &'static [u8],
     pub width: u16,
     pub height: u16,
+    // Size in BYTES per frame (width * height * 2 for RGB565)
     pub frame_size: usize,
     pub frame_count: usize,
+}
+
+impl AnimationMetadata {
+    pub const fn new(
+        data: &'static [u8],
+        width: u16,
+        height: u16,
+        frame_count: usize,
+        ) -> Self {
+        Self {
+            data,
+            width,
+            height,
+            frame_size: (width as usize) * (height as usize) * 2,
+            frame_count,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -88,6 +144,31 @@ impl CursorMove {
         }
     }
 
+    pub fn next_frame(&mut self) -> Option<FrameType> { 
+        if self.frame_index >= self.frame_count {
+            return None;
+        };
+
+        let position = self.path.points().nth(self.frame_index)?;
+
+        let x = position.x as u32;
+        let y = position.y as u32;
+        self.cursor_rect = self.cursor_rect
+            .resized(
+                Size::new(x, y), 
+                AnchorPoint::TopLeft);
+
+        self.frame_index += 1;
+        Some(FrameType::Rectangle(self.cursor_rect))
+    }
+
+    pub fn current_frame(&self) -> FrameType {
+        if self.frame_index >= self.frame_count {
+            return FrameType::Empty;
+        }
+        FrameType::Rectangle(self.cursor_rect)
+    }
+
     pub fn get_frame(&mut self) -> FrameType {
         let mut frame = FrameType::Empty;
         if self.frame_index >= self.frame_count {
@@ -110,10 +191,50 @@ impl CursorMove {
 pub struct AnimationIterator {
     pub frame_bytes: &'static AnimationMetadata,
     pub current_frame: usize,
-    pub position: Point
+    pub position: Point,
+    pub looping: bool,
 }
 
 impl AnimationIterator {
+    pub fn next_frame(&mut self) -> Option<FrameType> {
+        if self.current_frame >= self.frame_bytes.frame_count {
+            if self.looping {
+                self.current_frame = 0;
+            } else {
+                return None;
+            }
+        }
+
+        let frame = self.get_frame_at(self.current_frame);
+        self.current_frame += 1;
+        Some(frame)
+    }
+
+    pub fn current_frame(&self) -> FrameType {
+        if self.current_frame >= self.frame_bytes.frame_count {
+            return FrameType::Empty;
+        }
+        self.get_frame_at(self.current_frame)
+    }
+
+    fn get_frame_at(&self, frame_index: usize) -> FrameType {
+        let start = frame_index * self.frame_bytes.frame_size;
+        let end = start + self.frame_bytes.frame_size;
+
+        if end > self.frame_bytes.data.len() {
+            return FrameType::Empty;
+        }
+
+        let bytes = &self.frame_bytes.data[start..end];
+
+        FrameType::Sprite(FrameData { 
+            data: bytes,
+            width: self.frame_bytes.width, 
+            height: self.frame_bytes.height,
+            position: self.position 
+        })
+    }
+
     pub fn get_frame_bytes(&self) -> FrameType {
         let frame_byte_size = self.frame_bytes.frame_size * 2;
         let start_position = self.current_frame as usize * frame_byte_size;

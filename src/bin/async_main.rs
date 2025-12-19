@@ -4,7 +4,7 @@
 use embassy_executor::Spawner;
 use esp_alloc::HeapStats;
 use esp_backtrace as _;
-use esp_hal::{clock::CpuClock, gpio::{Input, InputConfig, Pull}, interrupt::software::SoftwareInterruptControl, peripherals::PSRAM, psram::{self, psram_raw_parts}, system::Stack, timer::timg::TimerGroup};
+use esp_hal::{clock::CpuClock, gpio::{Input, InputConfig, Pull}, interrupt::software::SoftwareInterruptControl, peripherals::PSRAM, psram::psram_raw_parts, system::Stack, timer::timg::TimerGroup};
 use static_cell::StaticCell;
 use timetool_v2::{button::Button, clock::{DoubleTimerSession, SessionNotifier, SessionState}, tft::{SpiPins, TFT}};
 use timetool_v2::constants::PSRAM_ALLOCATOR;

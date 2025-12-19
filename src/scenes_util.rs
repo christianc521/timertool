@@ -97,6 +97,7 @@ impl SceneManager {
 
     pub fn play_next(&mut self) -> [FrameType; 6] {
         let mut frames = [FrameType::Empty; 6];
+
         for ( index, animation ) in self.animation_queue
             .queue
             .iter_mut()
@@ -106,18 +107,14 @@ impl SceneManager {
                 Animation::Empty => {
                 }
                 _ => {
-                    let next_frame = animation.get_frame();
-                    match next_frame {
-                        // If the next frame is empty, 
-                        // set self.animation_queue block to empty
-                        FrameType::Empty => {
+                    match animation.next_frame() {
+                        Some(frame) => {
+                            frames[index] = frame;
+                        },
+                        None => {
+                            // Animation finished
                             *animation = Animation::Empty;
                             frames[index] = FrameType::Empty;
-                        }
-                        // Else, populate animation frame queue with frame data
-                        // TODO: to be handled in tft.rs 
-                        _ => {
-                            frames[index] = next_frame;
                         }
                     }
                 }

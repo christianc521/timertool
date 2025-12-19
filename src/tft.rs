@@ -1,3 +1,5 @@
+use core::result;
+
 use allocator_api2::boxed::Box;
 use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
 use esp_alloc::ExternalMemory;
@@ -57,7 +59,7 @@ impl<'spi> TFT<'spi> {
         let spi = Spi::new(
             spi_pins.spi2, 
             Config::default()
-                .with_frequency(Rate::from_mhz(4))
+                .with_frequency(Rate::from_mhz(40))
                 .with_mode(esp_hal::spi::Mode::_0))
             .unwrap()
             .with_sck(spi_pins.sclk)
@@ -75,7 +77,7 @@ impl<'spi> TFT<'spi> {
         let boxed_buffer_data: Box<[Rgb565; PIXEL_COUNT], ExternalMemory> = Box::new_in([Rgb565::BLACK; PIXEL_COUNT], ExternalMemory);
 
         // FrameBuf implementation for PSRAM data
-        let boxed_buffer_data = BufferData(boxed_buffer_data);
+        let boxed_buffer_data = BufferData::new(boxed_buffer_data);
         let frame_buffer = FrameBuf::new(boxed_buffer_data, 320, 240);
 
 
@@ -150,15 +152,68 @@ impl<'spi> TFT<'spi> {
         };
     }
 
-    pub fn render_next_frame(&mut self) {
-        // Reset clear display of any animation elements 
-        // to prepare for next frame
-        let initial_data = &self.frame_buffer.data;
-        let area = self.display.bounding_box();
+    pub fn flush_dirty_regions(&mut self) {
+        let dirty_regions: heapless::Vec<Rectangle, 8> = self
+            .frame_buffer
+            .data
+            .take_dirty_regions()
+            .collect();
 
-        self.display
-            .fill_contiguous(&area, initial_data)
-            .unwrap();
+        for region in dirty_regions {
+            self.transfer_region(&region);
+        }
+    }
+
+    fn transfer_region(&mut self, rect: &Rectangle) {
+        let x0 = rect.top_left.x as u16;
+        let y0 = rect.top_left.y as u16;
+        let x1 = x0 + rect.size.width as u16 - 1;
+        let y1 = y0 + rect.size.height as u16 - 1;
+
+        // Set window once for the entire region
+        // Row-by-row transfer:
+        for (row_index, row_pixels) in self
+            .frame_buffer
+            .data
+            .get_region_rows(rect)
+            .enumerate() {
+                let row_y = y0 + row_index as u16;
+
+                // Convert &[Rgb565] to &[u16] for raw transfer
+                let raw_pixels = unsafe {
+                    core::slice::from_raw_parts(
+                        row_pixels.as_ptr() as *const u16,
+                        row_pixels.len(),
+                    )
+                };
+
+                self.display
+                    .draw_raw_slice(x0, row_y, x1, row_y, raw_pixels)
+                    .unwrap();
+            }
+    }
+
+    pub fn draw_and_mark_dirty<D: Drawable<Color = Rgb565>>(
+        &mut self,
+        drawable: &D,
+    ) -> Result<D::Output, core::convert::Infallible> 
+    where 
+        D: DrawTarget<Color = Rgb565, Error = core::convert::Infallible>
+    {
+        // Get bounding box before drawing
+        let bounds = drawable.bounding_box();
+
+        let result = drawable.draw(&mut self.frame_buffer)?;
+
+        self.frame_buffer.data.mark_dirty(bounds);
+
+        Ok(result)
+    }
+
+
+    pub fn render_next_frame(&mut self) {
+        // Only flush dirty regions
+        self.flush_dirty_regions();
 
         // Grab array of frames to be rendered
         let frame_queue = self.scene_manager.play_next();
@@ -170,11 +225,29 @@ impl<'spi> TFT<'spi> {
         let mut empty_count: usize = 0;
         for frame in frame_queue {
             match frame {
-                FrameType::Rectangle(rect) => self.animate_cursor(rect),
-                FrameType::Sprite(frame_data) => self.render_frame(frame_data),
+                FrameType::Rectangle(rect) => { 
+                    self.animate_cursor(rect);
+                    self.frame_buffer.data.mark_dirty(rect);
+                },
+                FrameType::Sprite(frame_data) => { 
+                    self.render_frame(frame_data);
+
+                    let sprite_rect = Rectangle::new(
+                        frame_data.position,
+                        Size::new(
+                            frame_data.width as u32,
+                            frame_data.height as u32
+                            )
+                        );
+                    self.frame_buffer.data.mark_dirty(sprite_rect);
+
+                },
                 FrameType::Empty => empty_count += 1,
             }
         }
+
+        // Flush any newly dirtied regions from this frame
+        self.flush_dirty_regions();
 
         // Turn off 30 fps render flag if no more frames in the queue
         if empty_count == MAX_ANIMATIONS { self.playing_animation = false };

@@ -1,4 +1,3 @@
-use embedded_graphics::{prelude::{Point, Size}, primitives::Rectangle};
 use crate::{animations::Animation, scenes_util::SceneData};
 
 use crate::clock::SessionState;
