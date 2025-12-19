@@ -47,9 +47,10 @@ async fn inner_render_loop(
 ) -> ! {
     let packet = Packet::default();
     tft.handle_payload(&packet);
-    let mut frame_ticker = Ticker::every(Duration::from_hz(FRAME_RATE));
-    'outer: loop {
 
+    let mut frame_ticker = Ticker::every(Duration::from_hz(FRAME_RATE));
+
+    loop {
         // Hybrid Rendering System
         // 30 FPS while playing animations
         // Event-driven renders for state changes
@@ -57,37 +58,19 @@ async fn inner_render_loop(
         // handle any incoming event payloads first [high priority] 
 
         if !tft.playing_animation {
-            // either wait for a new payload or sleep for 4 seconds
-            let sleep1sec_or_signal = 
-                select(
-                    Timer::after_secs(1), 
-                    notifier.wait()
-                ).await;
-
-            // if a new payload was recieved before the sleep, 
-            // start loop with new payload
-            if let Either::Second(notification) = sleep1sec_or_signal {
-                tft.handle_payload(&notification);
-                continue 'outer
-            }
+            let notification = notifier.wait().await;
+            tft.handle_payload(&notification);
         } else {
-            // either wait for a new payload or wait for the next draw frame
-            let sleep30hz_or_signal = 
-                select(
-                    frame_ticker.next(), 
-                    notifier.wait()
-                ).await;
-
-            // TODO: call tft render_next_frame on all animated elements
-            tft.render_next_frame();
-
-            // if a new payload was recieved before the next draw frame (30fps), 
-            // start loop with new payload
-            if let Either::Second(notification) = sleep30hz_or_signal {
-                tft.handle_payload(&notification);
-                continue 'outer
+            match select(frame_ticker.next(), notifier.wait()).await {
+                Either::First(_) => {
+                    tft.render_next_frame();
+                }
+                // if a new payload was recieved before the sleep, 
+                // start loop with new payload
+                Either::Second(notification) => {
+                    tft.handle_payload(&notification);
+                }
             }
         }
-
     }
 }

@@ -1,8 +1,8 @@
 use core::{array::IntoIter, slice::Iter};
 
 use allocator_api2::boxed::Box;
-use embedded_graphics::prelude::{Dimensions, OriginDimensions, Size};
-use embedded_graphics::{pixelcolor::Rgb565, prelude::DrawTarget};
+use embedded_graphics::prelude::{OriginDimensions, Size};
+use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::Pixel;
 use embedded_graphics_framebuf::{PixelIterator, backends::FrameBufferBackend};
 use esp_alloc::ExternalMemory;
