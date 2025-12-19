@@ -1,5 +1,5 @@
 use embedded_graphics::{Drawable, pixelcolor::Rgb565, prelude::{RgbColor, Size}, primitives::{PrimitiveStyleBuilder, Rectangle, StyledDrawable}};
-use crate::{animations::{Animation, AnimationEvent, AnimationState, FrameType}, clickable::ClickableElement, constants::{MAX_ANIMATIONS, TEST_SCENE}, text_box::TextElement};
+use crate::{animations::{Animation, AnimationState, FrameType}, clickable::ClickableElement, constants::{MAX_ANIMATIONS, TEST_SCENE}, text_box::TextElement};
 
 #[derive(Default, Debug, Clone, Copy)]
 pub enum Scene {
@@ -175,18 +175,3 @@ impl UINode for DigitsElement
        }
    }
 }
-
-impl Drawable for DigitsElement 
-{
-    type Color = Rgb565;
-    type Output = ();
-
-    fn draw<D>(&self, target: &mut D) -> Result<Self::Output, D::Error>
-        where
-            D: embedded_graphics::prelude::DrawTarget<Color = Self::Color> {
-                todo!()
-        
-    }
-
-}
-

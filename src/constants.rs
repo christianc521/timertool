@@ -11,13 +11,11 @@ pub const MAX_DIRTY_RECTS: usize = 4;
 pub const MERGE_THRESHOLD: i32 = 16;
 pub static PSRAM_ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
-pub const DICE_ANIMATION: AnimationMetadata = AnimationMetadata {
-    data: include_bytes!("./assets/dice_rgb565.bin"),
-    width: 137,
-    height: 100,
-    frame_size: 137 * 100,
-    frame_count: 30
-};
+pub const DICE_ANIMATION: AnimationMetadata = AnimationMetadata::new(
+    include_bytes!("./assets/dice_rgb565.bin"), 
+    137, 
+    100, 
+    38);
 
 pub const DICE_ITERATOR: AnimationIterator = AnimationIterator {
     frame_bytes: &DICE_ANIMATION,

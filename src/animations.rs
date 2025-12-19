@@ -60,20 +60,6 @@ impl Animation {
     }
 }
 
-pub trait AnimationEvent {
-    fn get_frame(&self) -> FrameType;
-}
-
-impl AnimationEvent for Animation {
-    fn get_frame(&self) -> FrameType {
-        match self {
-            Self::Cursor(cursor_data) => FrameType::Empty,
-            Self::Sprite(sprite_data) => sprite_data.get_frame_bytes(),
-            Self::Empty => FrameType::Empty
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum FrameType {
     Rectangle(Rectangle),
@@ -232,21 +218,6 @@ impl AnimationIterator {
             width: self.frame_bytes.width, 
             height: self.frame_bytes.height,
             position: self.position 
-        })
-    }
-
-    pub fn get_frame_bytes(&self) -> FrameType {
-        let frame_byte_size = self.frame_bytes.frame_size * 2;
-        let start_position = self.current_frame as usize * frame_byte_size;
-        let end_position = start_position + frame_byte_size;
-
-        let bytes = &self.frame_bytes.data[start_position..end_position];
-
-        FrameType::Sprite(FrameData { 
-            data: bytes,
-            width: self.frame_bytes.width,
-            height: self.frame_bytes.height,
-            position: self.position
         })
     }
 }
