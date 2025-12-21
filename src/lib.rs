@@ -11,3 +11,4 @@ pub mod animations;
 pub mod scenes_util;
 pub mod clickable;
 pub mod text_box;
+pub mod home_ui;

@@ -1,5 +1,3 @@
-use core::result;
-
 use allocator_api2::boxed::Box;
 use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
 use esp_alloc::ExternalMemory;
@@ -59,7 +57,7 @@ impl<'spi> TFT<'spi> {
         let spi = Spi::new(
             spi_pins.spi2, 
             Config::default()
-                .with_frequency(Rate::from_mhz(40))
+                .with_frequency(Rate::from_mhz(60))
                 .with_mode(esp_hal::spi::Mode::_0))
             .unwrap()
             .with_sck(spi_pins.sclk)
@@ -110,6 +108,8 @@ impl<'spi> TFT<'spi> {
         }
 
         self.display.fill_contiguous(&self.display.bounding_box(), &self.frame_buffer.data).unwrap();
+
+        let _ = self.frame_buffer.data.take_dirty_regions();
     }
 
     pub fn handle_payload(&mut self, packet: &Packet) {
@@ -212,8 +212,6 @@ impl<'spi> TFT<'spi> {
 
 
     pub fn render_next_frame(&mut self) {
-        // Only flush dirty regions
-        self.flush_dirty_regions();
 
         // Grab array of frames to be rendered
         let frame_queue = self.scene_manager.play_next();
@@ -226,6 +224,8 @@ impl<'spi> TFT<'spi> {
         for frame in frame_queue {
             match frame {
                 FrameType::Rectangle(rect) => { 
+                    // Only flush dirty regions
+                    self.flush_dirty_regions();
                     self.animate_cursor(rect);
                     self.frame_buffer.data.mark_dirty(rect);
                 },
@@ -239,15 +239,12 @@ impl<'spi> TFT<'spi> {
                             frame_data.height as u32
                             )
                         );
-                    self.frame_buffer.data.mark_dirty(sprite_rect);
+                    // self.frame_buffer.data.mark_dirty(sprite_rect);
 
                 },
                 FrameType::Empty => empty_count += 1,
             }
         }
-
-        // Flush any newly dirtied regions from this frame
-        self.flush_dirty_regions();
 
         // Turn off 30 fps render flag if no more frames in the queue
         if empty_count == MAX_ANIMATIONS { self.playing_animation = false };
@@ -284,9 +281,7 @@ impl<'spi> TFT<'spi> {
             .unwrap();
         
         // Draw the buffer to display with the cursor
-        self.display
-            .fill_contiguous(area, &self.frame_buffer.data)
-            .unwrap();
+        self.transfer_region(&cursor);
     }
 
     #[inline]
@@ -308,7 +303,7 @@ impl<'spi> TFT<'spi> {
         let _ = text.draw(&mut self.frame_buffer).unwrap();
 
         // Finally, draw the buffer to the screen
-        self.display.fill_contiguous(&self.frame_buffer.bounding_box(), &self.frame_buffer.data).unwrap();
+        self.transfer_region(&draw_area);
 
     }
 }

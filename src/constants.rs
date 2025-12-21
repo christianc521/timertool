@@ -1,11 +1,11 @@
-use embedded_graphics::{prelude::{Point, Size}, primitives::Rectangle};
+use embedded_graphics::prelude::Point;
 
-use crate::{animations::{Animation, AnimationIterator, AnimationMetadata}, scenes_util::{Scene, SceneData, UIType}, text_box::TextElement};
+use crate::{animations::{Animation, AnimationIterator, AnimationMetadata}, scenes_util::{Scene, SceneData, UIType}};
 
 pub const DISPLAY_WIDTH: u32 = 320;
 pub const DISPLAY_HEIGHT: u32 = 240;
 
-pub const FRAME_RATE: u64 = 30;
+pub const FRAME_RATE: u64 = 15;
 pub const PIXEL_COUNT: usize = 76800; 
 pub const MAX_DIRTY_RECTS: usize = 4;
 pub const MERGE_THRESHOLD: i32 = 16;
@@ -13,14 +13,35 @@ pub static PSRAM_ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 pub const DICE_ANIMATION: AnimationMetadata = AnimationMetadata::new(
     include_bytes!("./assets/dice_rgb565.bin"), 
-    137, 
-    100, 
-    38);
+    110, 
+    75, 
+    24);
+
+pub const MIKU: AnimationMetadata = AnimationMetadata::new(
+    include_bytes!("./assets/miku.bin"),
+    150,
+    20,
+    10,
+    );
 
 pub const DICE_ITERATOR: AnimationIterator = AnimationIterator {
     frame_bytes: &DICE_ANIMATION,
     current_frame: 0,
-    position: Point::new(20, 20),
+    position: Point::new(20, 80),
+    looping: true
+};
+
+pub const MIKU_ITERATOR: AnimationIterator = AnimationIterator {
+    frame_bytes: &MIKU,
+    current_frame: 0,
+    position: Point::new(160, 80),
+    looping: true
+};
+
+pub const MIKU_ITERATOR2: AnimationIterator = AnimationIterator {
+    frame_bytes: &MIKU,
+    current_frame: 0,
+    position: Point::new(160, 110),
     looping: true
 };
 
@@ -30,11 +51,8 @@ pub const TEST_SCENE: SceneData = SceneData {
     scene: Scene::ConfigTaro,
     elements: [
         UIType::AnimatedSprite(Animation::Sprite(DICE_ITERATOR)),
-        UIType::TextBox(TextElement{
-            position: Rectangle::new(Point::new_equal(130), Size::new_equal(80)),
-            text: "texter"
-        }),
-        UIType::Empty,
+        UIType::AnimatedSprite(Animation::Sprite(MIKU_ITERATOR)),
+        UIType::AnimatedSprite(Animation::Sprite(MIKU_ITERATOR2)),
         UIType::Empty,
         UIType::Empty,
         UIType::Empty,
