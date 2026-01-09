@@ -1,4 +1,4 @@
-use embedded_graphics::prelude::Point;
+use embedded_graphics::{pixelcolor::Rgb565, prelude::Point};
 
 use crate::{animations::{Animation, AnimationIterator, AnimationMetadata}, scenes_util::{Scene, SceneData, UIType}};
 
@@ -63,3 +63,22 @@ pub const TEST_SCENE: SceneData = SceneData {
     ],
     cursor_index: 0
 };
+
+pub const MAIN_MENU_SCENE: SceneData = SceneData {
+    scene: Scene::MainMenu,
+    elements: [
+        UIType::Title,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+    ],
+    cursor_index: 0
+};
+
+pub const RGB_DEEP_PURPLE: Rgb565 = Rgb565::new(61, 56, 70);

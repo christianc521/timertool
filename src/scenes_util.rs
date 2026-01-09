@@ -1,9 +1,13 @@
-use embedded_graphics::{Drawable, pixelcolor::Rgb565, prelude::{RgbColor, Size}, primitives::{PrimitiveStyleBuilder, Rectangle, StyledDrawable}};
-use crate::{animations::{Animation, AnimationState, FrameType}, clickable::ClickableElement, constants::{MAX_ANIMATIONS, TEST_SCENE}, text_box::TextElement};
+use embedded_graphics::{Drawable, pixelcolor::Rgb565, prelude::{Dimensions, Point, RgbColor, Size}, primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment, StyledDimensions, StyledDrawable}, text::Text};
+use embedded_graphics_framebuf::FrameBuf;
+use embedded_ttf::FontTextStyleBuilder;
+use rusttype::Font;
+use crate::{animations::{Animation, AnimationState, FrameType}, clickable::ClickableElement, constants::{MAX_ANIMATIONS, RGB_DEEP_PURPLE, TEST_SCENE}, text_box::TextElement};
 
 #[derive(Default, Debug, Clone, Copy)]
 pub enum Scene {
     #[default]
+    MainMenu,
     ConfigTaro,
     ConfigTaroPlus,
     ConfigCountingUp,
@@ -22,6 +26,7 @@ pub enum UIType {
     Digits(DigitsElement),
     AnimatedSprite(Animation),
     TextBox(TextElement),
+    Title,
     Empty
 }
 
@@ -60,6 +65,38 @@ impl Drawable for UIType {
                     .build();
                 top_bar.draw_styled(&style, target)
             },
+            UIType::Title => {
+                let point = Point::new(140, 10);
+                let buffer_data = [Rgb565::BLACK; 170 * 50];
+                let mut buffer = FrameBuf::new_with_origin(buffer_data, 170, 50, point);
+
+                // Draw border
+                let border_style = PrimitiveStyleBuilder::new()
+                    .stroke_width(2)
+                    .stroke_color(RGB_DEEP_PURPLE)
+                    .stroke_alignment(StrokeAlignment::Inside)
+                    .build();
+                let border = buffer.bounding_box();
+                border.draw_styled(&border_style, &mut buffer).unwrap();
+
+                // Draw title
+                let text_style = FontTextStyleBuilder::new(
+                    Font::try_from_bytes(
+                        include_bytes!("./assets/Scientia-Black.ttf")
+                    ).unwrap()
+                )
+                    .font_size(16)
+                    .text_color(Rgb565::WHITE)
+                    .build();
+                let text = Text::new(
+                    "PTD-32", 
+                    Point::new(140, 10), 
+                    text_style);
+                text.draw(&mut buffer).unwrap();
+
+                // Send buffer to display
+                target.fill_contiguous(&buffer.bounding_box(), buffer.data)
+            }
             _ => Ok(())
         }
     }

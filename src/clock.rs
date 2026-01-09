@@ -41,6 +41,7 @@ impl SingleClock {
 #[derive(Debug, PartialEq, Default, Clone, Copy)]
 pub enum SessionState {
     #[default]
+    MainMenu,
     Working,
     Break,
     Paused
@@ -53,9 +54,26 @@ impl SessionState {
         button: &mut Button<'_>) -> Self 
     {
         match self {
+            SessionState::MainMenu => self.execute_main_menu(session, button).await,
             SessionState::Working => self.execute_working(session, button).await,
             SessionState::Break => self.execute_break(session, button).await,
             SessionState::Paused => self.execute_paused(session, button).await,
+        }
+    }
+
+    async fn execute_main_menu(self, session: &mut DoubleTimerSession<'_>, button: &mut Button<'_>) -> Self {
+        session.set_state(self).await;
+
+        // Wait for any button press to start
+        match button.press_duration().await {
+            PressDuration::Short => {
+                esp_println::println!("menu -> working (short)");
+                Self::Working
+            }
+            PressDuration::Long => {
+                esp_println::println!("menu -> break (long)");
+                Self::Break
+            }
         }
     }
 
@@ -101,11 +119,12 @@ impl SessionState {
         }
     }
 
-    pub(crate) fn render(self, time: &mut Time) -> (Packet, Duration) {
+    pub(crate) fn render(self, time: &mut Time) -> Option<(Packet, Duration)> {
         match self {
-            Self::Working => Self::render_working(time),
-            Self::Break => Self::render_break(time),
-            Self::Paused => Self::render_paused(time)
+            Self::MainMenu => None, // doesn't send time packets
+            Self::Working => Some(Self::render_working(time)),
+            Self::Break => Some(Self::render_break(time)),
+            Self::Paused => Some(Self::render_paused(time))
         }
     }
 
@@ -159,8 +178,8 @@ impl<'spi> DoubleTimerSession<'spi> {
         notifier: &'static SessionNotifier,
     ) -> Result<Self, SpawnError> {
         let (outer_notifier, tft_notifier) = notifier;
-        let tft = TFTRender::new(tft, tft_notifier, spawner)?;
-        spawner.spawn(device_loop(outer_notifier, tft))?;
+        let _tft = TFTRender::new(tft, tft_notifier, spawner)?;
+        spawner.spawn(device_loop(outer_notifier, tft_notifier))?;
         Ok(Self(outer_notifier))
     }
 
@@ -176,16 +195,26 @@ impl<'spi> DoubleTimerSession<'spi> {
 }
 
 #[embassy_executor::task]
-async fn device_loop(session_notifier: &'static SessionOuterNotifier, tft_renderer: TFTRender<'static>) -> ! {
+async fn device_loop(session_notifier: &'static SessionOuterNotifier, tft_notifier: &'static TFTNotifier) -> ! {
     let mut time = Time::default();
     let mut session_state = SessionState::default();
 
     loop {
-        let (panel, sleep_dur) = session_state.render(&mut time);
-        tft_renderer.render(panel);
-        if let Either::First(notification) = select(session_notifier.receive(), Timer::after(sleep_dur)).await
-        {
+        if let Some((panel, sleep_dur)) = session_state.render(&mut time) {
+            tft_notifier.signal(panel);
+
+            if let Either::First(notification) = 
+                select(session_notifier.receive(), Timer::after(sleep_dur)).await
+            {
+                notification.apply(&mut time, &mut session_state);
+            }
+        } else {
+            // Menu state: just wait for state change notification
+            let notification = session_notifier.receive().await;
             notification.apply(&mut time, &mut session_state);
+
+            // Reset time when going from menu to a session
+            time = Time::default();
         }
     }
 }

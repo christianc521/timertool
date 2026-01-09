@@ -4,7 +4,7 @@ use esp_alloc::ExternalMemory;
 use esp_hal::{Async, delay::Delay, dma::{DmaRxBuf, DmaTxBuf}, dma_buffers, gpio::{ Level, Output, OutputConfig }, peripherals::{ DMA_CH0, GPIO4, GPIO9, GPIO10, GPIO11, GPIO12, GPIO13, SPI2 }, spi::master::{Config, Spi, SpiDmaBus}, time::Rate};
 use display_interface_spi::SPIInterface;
 use ili9341::{DisplaySize240x320, Ili9341, Orientation};
-use crate::{animations::{Animation, FrameData, FrameType}, buffer_backend::BufferData, clock::SessionState, constants::{MAX_ANIMATIONS, PIXEL_COUNT}, scenes_util::{SceneData, SceneManager}};
+use crate::{animations::{Animation, FrameData, FrameType}, buffer_backend::BufferData, clock::SessionState, constants::{MAIN_MENU_SCENE, MAX_ANIMATIONS, PIXEL_COUNT}, scenes_util::{SceneData, SceneManager}};
 
 use embedded_graphics::{
     pixelcolor::Rgb565, prelude::*, primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment, StyledDrawable}, text::{Baseline, Text}
@@ -100,22 +100,17 @@ impl<'spi> TFT<'spi> {
     }
 
     pub fn initialize_scene(&mut self) {
-        self.frame_buffer.clear(Rgb565::BLACK).unwrap();
-        self.scene_manager.initialize_scene(SceneData::default());
-
-        for element in self.scene_manager.current_scene.elements {
-            element.draw(&mut self.frame_buffer).unwrap();
-        }
-
-        self.display.fill_contiguous(&self.display.bounding_box(), &self.frame_buffer.data).unwrap();
-
-        let _ = self.frame_buffer.data.take_dirty_regions();
+        self.load_scene(SceneData::default());
     }
 
     pub fn handle_payload(&mut self, packet: &Packet) {
         let payload = packet.0;
 
         match payload {
+            Payload::Menu => {
+                self.playing_animation = false;
+                self.load_scene(MAIN_MENU_SCENE);
+            }
             Payload::Time(bytes, state) => {
                 let message = str::from_utf8(&bytes).unwrap_or("error");
 
@@ -150,6 +145,26 @@ impl<'spi> TFT<'spi> {
             }
             _ => (),
         };
+    }
+
+    pub fn load_scene(&mut self, scene: SceneData) {
+        self.frame_buffer.clear(Rgb565::BLACK).unwrap();
+        self.scene_manager.initialize_scene(scene);
+
+        for element in self.scene_manager.current_scene.elements {
+            element.draw(&mut self.frame_buffer).unwrap();
+        }
+
+        self.display.fill_contiguous(
+            &self.display.bounding_box(), 
+            &self.frame_buffer.data
+        ).unwrap();
+
+        let _ = self.frame_buffer.data.take_dirty_regions();
+
+        self.playing_animation = self.scene_manager.animation_queue.queue
+            .iter()
+            .any(|a| !matches!(a, Animation::Empty));
     }
 
     pub fn flush_dirty_regions(&mut self) {
