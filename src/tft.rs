@@ -148,7 +148,11 @@ impl<'spi> TFT<'spi> {
     }
 
     pub fn load_scene(&mut self, scene: SceneData) {
-        self.frame_buffer.clear(Rgb565::BLACK).unwrap();
+        let background_color = Rgb565::new(
+            27, 
+            55, 
+            27);
+        self.frame_buffer.clear(background_color).unwrap();
         self.scene_manager.initialize_scene(scene);
 
         for element in self.scene_manager.current_scene.elements {

@@ -64,6 +64,9 @@ pub const TEST_SCENE: SceneData = SceneData {
     cursor_index: 0
 };
 
+pub const MENU_HEADER_DATA: &[u8] = include_bytes!("./assets/Menu_Header.bmp");
+pub const CLOCK_FACE_DATA: &[u8] = include_bytes!("./assets/Clock_Face.bmp");
+
 pub const MAIN_MENU_SCENE: SceneData = SceneData {
     scene: Scene::MainMenu,
     elements: [

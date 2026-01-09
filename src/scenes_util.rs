@@ -1,8 +1,8 @@
-use embedded_graphics::{Drawable, pixelcolor::Rgb565, prelude::{Dimensions, Point, RgbColor, Size}, primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment, StyledDimensions, StyledDrawable}, text::Text};
+use embedded_graphics::{Drawable, image::{Image, ImageRaw, ImageRawLE}, pixelcolor::Rgb565, prelude::{Dimensions, Point, RgbColor, Size}, primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment, StyledDimensions, StyledDrawable}, text::Text};
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_ttf::FontTextStyleBuilder;
 use rusttype::Font;
-use crate::{animations::{Animation, AnimationState, FrameType}, clickable::ClickableElement, constants::{MAX_ANIMATIONS, RGB_DEEP_PURPLE, TEST_SCENE}, text_box::TextElement};
+use crate::{animations::{Animation, AnimationState, FrameType}, clickable::ClickableElement, constants::{MAX_ANIMATIONS, MENU_HEADER_DATA, TEST_SCENE}, text_box::TextElement};
 
 #[derive(Default, Debug, Clone, Copy)]
 pub enum Scene {
@@ -20,17 +20,18 @@ pub trait UINode {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum UIType {
+pub enum UIType<'a> {
     Menu(),
     Clickable(ClickableElement),
     Digits(DigitsElement),
     AnimatedSprite(Animation),
     TextBox(TextElement),
+    Image(&'a [u8], u32),
     Title,
     Empty
 }
 
-impl Drawable for UIType {
+impl Drawable for UIType <'_>{
     type Color = Rgb565;
     type Output = ();
 
@@ -66,7 +67,16 @@ impl Drawable for UIType {
                 top_bar.draw_styled(&style, target)
             },
             UIType::Title => {
-                todo!("render ./assets/Menu_Header.bmp");
+                const HEADER_WIDTH: u32 = 176;
+
+                let raw_image: ImageRawLE<Rgb565> = ImageRaw::new(MENU_HEADER_DATA, HEADER_WIDTH);
+
+                let image = Image::new(
+                    &raw_image,
+                    Point::new(138, 11)
+                );
+
+                image.draw(target)
             }
             _ => Ok(())
         }
