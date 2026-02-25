@@ -3,8 +3,9 @@ use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
 use esp_alloc::ExternalMemory;
 use esp_hal::{Async, delay::Delay, dma::{DmaRxBuf, DmaTxBuf}, dma_buffers, gpio::{ Level, Output, OutputConfig }, peripherals::{ DMA_CH0, GPIO4, GPIO9, GPIO10, GPIO11, GPIO12, GPIO13, SPI2 }, spi::master::{Config, Spi, SpiDmaBus}, time::Rate};
 use display_interface_spi::SPIInterface;
-use ili9341::{DisplaySize240x320, Ili9341, Orientation};
-use crate::{animations::{Animation, FrameData, FrameType}, buffer_backend::BufferData, clock::SessionState, constants::{MAIN_MENU_SCENE, MAX_ANIMATIONS, PIXEL_COUNT}, scenes_util::{SceneData, SceneManager}};
+use mipidsi::{Builder, Display, interface::SpiInterface, models::ILI9488Rgb565, options::Orientation};
+use static_cell::StaticCell;
+use crate::{animations::{Animation, FrameData, FrameType}, buffer_backend::BufferData, clock::SessionState, constants::{MAIN_MENU_SCENE, MAX_ANIMATIONS, PIXEL_COUNT, SPI_BUF_SIZE}, scenes_util::{SceneData, SceneManager}};
 
 use embedded_graphics::{
     pixelcolor::Rgb565, prelude::*, primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment, StyledDrawable}, text::{Baseline, Text}
@@ -20,9 +21,13 @@ pub type TFTSpiDevice<'spi> =
 
 pub type TFTSpiInterface<'spi> = 
     SPIInterface<
-        ExclusiveDevice<SpiDmaBus<'spi, Async>, Output<'spi>, NoDelay>,
+        TFTSpiDevice<'spi>,
         Output<'spi>
     >;
+
+pub type TFTDisplay<'spi> =
+    Display<TFTSpiInterface<'spi>, ILI9488Rgb565, Output<'spi>>;
+
 
 pub struct SpiPins<'spi> {
         pub dma: DMA_CH0<'spi>,
@@ -37,7 +42,7 @@ pub struct SpiPins<'spi> {
 
 pub struct TFT<'spi>
 {
-    pub display: Ili9341<TFTSpiInterface<'spi>, Output<'spi>>,
+    pub display: TFTDisplay<'spi>,
     pub playing_animation: bool,
     frame_buffer: FrameBuf<Rgb565, BufferData>,
     scene_manager: SceneManager
@@ -57,7 +62,7 @@ impl<'spi> TFT<'spi> {
         let spi = Spi::new(
             spi_pins.spi2, 
             Config::default()
-                .with_frequency(Rate::from_mhz(60))
+                .with_frequency(Rate::from_mhz(26))
                 .with_mode(esp_hal::spi::Mode::_0))
             .unwrap()
             .with_sck(spi_pins.sclk)
@@ -69,33 +74,36 @@ impl<'spi> TFT<'spi> {
 
         let cs_output = Output::new(spi_pins.cs, Level::Low, OutputConfig::default());
         let spi_device = ExclusiveDevice::new_no_delay(spi, cs_output).unwrap();
-        let interface = SPIInterface::new(spi_device, dc_output);
+        
+        // ---- SPI transfer buffer -----
+        static SPI_BUS: StaticCell<[u8; SPI_BUF_SIZE]> = StaticCell::new();
+        let spi_buf: &'static mut [u8] = SPI_BUS.init([0u8; SPI_BUF_SIZE]);
+
+        let interface = SpiInterface::new(spi_device, dc_output, spi_buf);
 
         // Create the buffer backend in PSRAM
         let boxed_buffer_data: Box<[Rgb565; PIXEL_COUNT], ExternalMemory> = Box::new_in([Rgb565::BLACK; PIXEL_COUNT], ExternalMemory);
 
         // FrameBuf implementation for PSRAM data
         let boxed_buffer_data = BufferData::new(boxed_buffer_data);
-        let frame_buffer = FrameBuf::new(boxed_buffer_data, 320, 240);
+        let frame_buffer = FrameBuf::new(boxed_buffer_data, 480, 320);
 
 
-        let display = Ili9341::new(
-            interface, 
-            rst_output, 
-            &mut Delay::new(),
-            Orientation::Landscape, 
-            DisplaySize240x320
-        ).unwrap();
+        let display = Builder::new(ILI9488Rgb565, interface)
+            .reset_pin(rst_output)
+            .orientation(Orientation::new())
+            .init(&mut Delay::new())
+            .unwrap();
 
         esp_println::println!("Initialized Display!");
 
         let mut tft = TFT { 
             display,
-            playing_animation: true,
+            playing_animation: false,
             frame_buffer,
             scene_manager: SceneManager::default()
         };
-        tft.initialize_scene();
+        // tft.initialize_scene();
         tft
     }
 
@@ -152,6 +160,8 @@ impl<'spi> TFT<'spi> {
             27, 
             55, 
             27);
+        let background_color = Rgb565::RED;
+
         self.frame_buffer.clear(background_color).unwrap();
         self.scene_manager.initialize_scene(scene);
 
@@ -198,16 +208,8 @@ impl<'spi> TFT<'spi> {
             .enumerate() {
                 let row_y = y0 + row_index as u16;
 
-                // Convert &[Rgb565] to &[u16] for raw transfer
-                let raw_pixels = unsafe {
-                    core::slice::from_raw_parts(
-                        row_pixels.as_ptr() as *const u16,
-                        row_pixels.len(),
-                    )
-                };
-
                 self.display
-                    .draw_raw_slice(x0, row_y, x1, row_y, raw_pixels)
+                    .draw_raw_slice(x0, row_y, x1, row_y, row_pixels)
                     .unwrap();
             }
     }
@@ -276,14 +278,14 @@ impl<'spi> TFT<'spi> {
         let y1 = y0 + frame_data.height - 1;
 
         let pixel_count = frame_data.width * frame_data.height;
-        let bytes = unsafe {
+        let pixels = unsafe {
             core::slice::from_raw_parts(
-                frame_data.data.as_ptr() as *const u16,
+                frame_data.data.as_ptr() as *const Rgb565,
                 pixel_count as usize
                 )
         };
 
-        let _ = &self.display.draw_raw_slice(x0, y0, x1, y1, bytes).unwrap();
+        let _ = &self.display.draw_raw_slice(x0, y0, x1, y1, pixels).unwrap();
     }
 
     fn animate_cursor(&mut self, cursor: Rectangle) {

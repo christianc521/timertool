@@ -1,15 +1,16 @@
 use embedded_graphics::{pixelcolor::Rgb565, prelude::Point};
 
-use crate::{animations::{Animation, AnimationIterator, AnimationMetadata}, scenes_util::{Scene, SceneData, UIType}};
+use crate::{animations::{Animation, AnimationIterator, AnimationMetadata}, scenes_util::{ImageData, Scene, SceneData, UIType}};
 
-pub const DISPLAY_WIDTH: u32 = 320;
-pub const DISPLAY_HEIGHT: u32 = 240;
+pub const DISPLAY_WIDTH: u32 = 480;
+pub const DISPLAY_HEIGHT: u32 = 320;
 
 pub const FRAME_RATE: u64 = 15;
-pub const PIXEL_COUNT: usize = 76800; 
+pub const PIXEL_COUNT: usize = 153600; 
 pub const MAX_DIRTY_RECTS: usize = 4;
 pub const MERGE_THRESHOLD: i32 = 16;
 pub static PSRAM_ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
+pub const SPI_BUF_SIZE: usize = 3072;
 
 pub const DICE_ANIMATION: AnimationMetadata = AnimationMetadata::new(
     include_bytes!("./assets/dice_rgb565.bin"), 
@@ -48,7 +49,7 @@ pub const MIKU_ITERATOR2: AnimationIterator = AnimationIterator {
 pub const MAX_ANIMATIONS: usize = 6;
 
 pub const TEST_SCENE: SceneData = SceneData {
-    scene: Scene::ConfigTaro,
+    scene: Scene::MainMenu,
     elements: [
         UIType::AnimatedSprite(Animation::Sprite(DICE_ITERATOR)),
         UIType::AnimatedSprite(Animation::Sprite(MIKU_ITERATOR)),
@@ -67,11 +68,25 @@ pub const TEST_SCENE: SceneData = SceneData {
 pub const MENU_HEADER_DATA: &[u8] = include_bytes!("./assets/Menu_Header.bmp");
 pub const CLOCK_FACE_DATA: &[u8] = include_bytes!("./assets/Clock_Face.bmp");
 
+pub const HEADER_IMAGE: ImageData = ImageData::new(
+    MENU_HEADER_DATA, 
+    176, 
+    40, 
+    Point::new(138, 11)
+);
+
+pub const CLOCK_IMAGE: ImageData = ImageData::new(
+    CLOCK_FACE_DATA, 
+    115, 
+    229, 
+    Point::new(10, 10)
+);
+
 pub const MAIN_MENU_SCENE: SceneData = SceneData {
     scene: Scene::MainMenu,
     elements: [
-        UIType::Title,
-        UIType::Empty,
+        UIType::Image(HEADER_IMAGE),
+        UIType::Image(CLOCK_IMAGE),
         UIType::Empty,
         UIType::Empty,
         UIType::Empty,

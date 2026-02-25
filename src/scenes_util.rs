@@ -20,18 +20,32 @@ pub trait UINode {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum UIType<'a> {
+pub enum UIType {
     Menu(),
     Clickable(ClickableElement),
     Digits(DigitsElement),
     AnimatedSprite(Animation),
     TextBox(TextElement),
-    Image(&'a [u8], u32),
+    Image(ImageData),
     Title,
     Empty
 }
 
-impl Drawable for UIType <'_>{
+#[derive(Debug, Clone, Copy)]
+pub struct ImageData {
+    pub data: &'static [u8],
+    pub width: u32,
+    pub height: u32,
+    pub position: Point
+}
+
+impl ImageData {
+    pub const fn new(data: &'static [u8], width: u32, height: u32, position: Point) -> Self {
+        ImageData { data, width, height, position }
+    }
+}
+
+impl Drawable for UIType {
     type Color = Rgb565;
     type Output = ();
 
@@ -76,6 +90,15 @@ impl Drawable for UIType <'_>{
                     Point::new(138, 11)
                 );
 
+                image.draw(target)
+            },
+            UIType::Image(image_data) => {
+                let raw_image: ImageRawLE<Rgb565> = ImageRaw::new(
+                    image_data.data, 
+                    image_data.width
+                );
+
+                let image = Image::new(&raw_image, image_data.position);
                 image.draw(target)
             }
             _ => Ok(())

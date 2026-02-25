@@ -60,15 +60,13 @@ async fn main(spawner: Spawner) {
      static SESSION_NOTIFIER: SessionNotifier = DoubleTimerSession::notifier();
      let mut session = DoubleTimerSession::new(tft, spawner, &SESSION_NOTIFIER).unwrap();
 
-    // // TODO: Spawn some tasks
+    // TODO: Spawn some tasks
     let _ = spawner;
 
     loop {
         esp_println::println!("im in da embussy :3");
         state = state.execute(&mut session, &mut button).await;
     }
-
-    // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/v0.23.1/examples/src/bin
 }
 
 fn init_psram_heap(psram: &PSRAM<'_>) {

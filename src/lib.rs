@@ -12,3 +12,5 @@ pub mod scenes_util;
 pub mod clickable;
 pub mod text_box;
 pub mod home_ui;
+pub mod encoder;
+// pub mod ili9481;
