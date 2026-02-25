@@ -2,7 +2,6 @@ use allocator_api2::boxed::Box;
 use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
 use esp_alloc::ExternalMemory;
 use esp_hal::{Async, delay::Delay, dma::{DmaRxBuf, DmaTxBuf}, dma_buffers, gpio::{ Level, Output, OutputConfig }, peripherals::{ DMA_CH0, GPIO4, GPIO9, GPIO10, GPIO11, GPIO12, GPIO13, SPI2 }, spi::master::{Config, Spi, SpiDmaBus}, time::Rate};
-use display_interface_spi::SPIInterface;
 use mipidsi::{Builder, Display, interface::SpiInterface, models::ILI9488Rgb565, options::Orientation};
 use static_cell::StaticCell;
 use crate::{animations::{Animation, FrameData, FrameType}, buffer_backend::BufferData, clock::SessionState, constants::{MAIN_MENU_SCENE, MAX_ANIMATIONS, PIXEL_COUNT, SPI_BUF_SIZE}, scenes_util::{SceneData, SceneManager}};
@@ -16,11 +15,17 @@ extern crate allocator_api2;
 
 use crate::payloads::{Packet, Payload};
 
+enum DisplayDriver {
+    Simulator,
+    Ili9488,
+    Ili9341
+}
 pub type TFTSpiDevice<'spi> = 
     ExclusiveDevice<SpiDmaBus<'spi, Async>, Output<'spi>, NoDelay>;
 
 pub type TFTSpiInterface<'spi> = 
-    SPIInterface<
+    SpiInterface<
+        'static,
         TFTSpiDevice<'spi>,
         Output<'spi>
     >;
@@ -52,7 +57,8 @@ impl<'spi> TFT<'spi> {
     pub fn new(
         spi_pins: SpiPins<'spi>,
         ) -> Self {
-        let rst_output = Output::new(spi_pins.rst, Level::Low, OutputConfig::default());
+        let mut rst_output = Output::new(spi_pins.rst, Level::Low, OutputConfig::default());
+        rst_output.set_high();
         let dc_output = Output::new(spi_pins.dc, Level::Low, OutputConfig::default());
 
         let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(32000);
@@ -62,7 +68,7 @@ impl<'spi> TFT<'spi> {
         let spi = Spi::new(
             spi_pins.spi2, 
             Config::default()
-                .with_frequency(Rate::from_mhz(26))
+                .with_frequency(Rate::from_mhz(60))
                 .with_mode(esp_hal::spi::Mode::_0))
             .unwrap()
             .with_sck(spi_pins.sclk)
@@ -72,7 +78,7 @@ impl<'spi> TFT<'spi> {
             .with_buffers(dma_rx_buf, dma_tx_buf)
             .into_async();
 
-        let cs_output = Output::new(spi_pins.cs, Level::Low, OutputConfig::default());
+        let cs_output = Output::new(spi_pins.cs, Level::High, OutputConfig::default());
         let spi_device = ExclusiveDevice::new_no_delay(spi, cs_output).unwrap();
         
         // ---- SPI transfer buffer -----
@@ -88,12 +94,14 @@ impl<'spi> TFT<'spi> {
         let boxed_buffer_data = BufferData::new(boxed_buffer_data);
         let frame_buffer = FrameBuf::new(boxed_buffer_data, 480, 320);
 
-
-        let display = Builder::new(ILI9488Rgb565, interface)
+        let mut display = Builder::new(ILI9488Rgb565, interface)
             .reset_pin(rst_output)
-            .orientation(Orientation::new())
+            .color_order(mipidsi::options::ColorOrder::Rgb)
+            .display_size(320, 480)
             .init(&mut Delay::new())
             .unwrap();
+
+        display.clear(Rgb565::RED).unwrap();
 
         esp_println::println!("Initialized Display!");
 
@@ -103,7 +111,7 @@ impl<'spi> TFT<'spi> {
             frame_buffer,
             scene_manager: SceneManager::default()
         };
-        // tft.initialize_scene();
+        tft.initialize_scene();
         tft
     }
 
@@ -160,7 +168,7 @@ impl<'spi> TFT<'spi> {
             27, 
             55, 
             27);
-        let background_color = Rgb565::RED;
+        let background_color = Rgb565::GREEN;
 
         self.frame_buffer.clear(background_color).unwrap();
         self.scene_manager.initialize_scene(scene);
@@ -209,7 +217,7 @@ impl<'spi> TFT<'spi> {
                 let row_y = y0 + row_index as u16;
 
                 self.display
-                    .draw_raw_slice(x0, row_y, x1, row_y, row_pixels)
+                    .set_pixels(x0, row_y, x1, row_y, row_pixels.iter().copied())
                     .unwrap();
             }
     }
@@ -285,7 +293,7 @@ impl<'spi> TFT<'spi> {
                 )
         };
 
-        let _ = &self.display.draw_raw_slice(x0, y0, x1, y1, pixels).unwrap();
+        let _ = &self.display.set_pixels(x0, y0, x1, y1, pixels.iter().copied()).unwrap();
     }
 
     fn animate_cursor(&mut self, cursor: Rectangle) {
