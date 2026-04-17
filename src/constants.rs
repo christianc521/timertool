@@ -2,15 +2,21 @@ use embedded_graphics::{pixelcolor::Rgb565, prelude::Point};
 
 use crate::{animations::{Animation, AnimationIterator, AnimationMetadata}, scenes_util::{ImageData, Scene, SceneData, UIType}};
 
-pub const DISPLAY_WIDTH: u32 = 480;
-pub const DISPLAY_HEIGHT: u32 = 320;
+pub const DISPLAY_WIDTH: u32 = 320;
+pub const DISPLAY_HEIGHT: u32 = 240;
 
 pub const FRAME_RATE: u64 = 15;
-pub const PIXEL_COUNT: usize = 153600; 
+pub const PIXEL_COUNT: usize = DISPLAY_HEIGHT as usize * DISPLAY_WIDTH as usize; 
 pub const MAX_DIRTY_RECTS: usize = 4;
 pub const MERGE_THRESHOLD: i32 = 16;
+
+#[cfg(not(feature = "simulator"))]
 pub static PSRAM_ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
+
+#[cfg(not(feature = "simulator"))]
 pub const SPI_BUF_SIZE: usize = 3072;
+
+
 
 pub const DICE_ANIMATION: AnimationMetadata = AnimationMetadata::new(
     include_bytes!("./assets/dice_rgb565.bin"), 
@@ -54,6 +60,23 @@ pub const TEST_SCENE: SceneData = SceneData {
         UIType::AnimatedSprite(Animation::Sprite(DICE_ITERATOR)),
         UIType::AnimatedSprite(Animation::Sprite(MIKU_ITERATOR)),
         UIType::AnimatedSprite(Animation::Sprite(MIKU_ITERATOR2)),
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
+    ],
+    cursor_index: 0
+};
+
+pub const EMPTY_SCENE: SceneData = SceneData {
+    scene: Scene::MainMenu,
+    elements: [
+        UIType::Empty,
+        UIType::Empty,
+        UIType::Empty,
         UIType::Empty,
         UIType::Empty,
         UIType::Empty,

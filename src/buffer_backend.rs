@@ -1,22 +1,42 @@
 use core::slice::Iter;
 
-use allocator_api2::boxed::Box;
 use embedded_graphics::prelude::{OriginDimensions, Point, Size};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::primitives::Rectangle;
 use embedded_graphics_framebuf::backends::FrameBufferBackend;
-use esp_alloc::ExternalMemory;
 use crate::constants::{ DISPLAY_HEIGHT, DISPLAY_WIDTH, MAX_DIRTY_RECTS, MERGE_THRESHOLD, PIXEL_COUNT };
 
+//------------------------------------------------------
+// Conditional Storage Type
+//------------------------------------------------------
+
+#[cfg(not(feature = "simulator"))]
+use allocator_api2::boxed::Box as AllocBox;
+
+#[cfg(not(feature = "simulator"))]
+use esp_alloc::ExternalMemory;
+
+#[cfg(not(feature = "simulator"))]
+pub type PixelStorage = AllocBox<[Rgb565; PIXEL_COUNT], ExternalMemory>;
+
+#[cfg(feature = "simulator")]
+pub type PixelStorage = alloc::boxed::Box<[Rgb565; PIXEL_COUNT]>;
+
+//------------------------------------------------------
+// BufferData Structure
+//------------------------------------------------------
+
 pub struct BufferData { 
-    pub buffer: Box<[Rgb565; PIXEL_COUNT], ExternalMemory>, 
+    pub buffer: PixelStorage, 
     dirty_regions: [Option<Rectangle>; MAX_DIRTY_RECTS],
     dirty_count: usize,
     full_redraw_needed: bool
 }
 
 impl BufferData {
-    pub fn new(buffer: Box<[Rgb565; PIXEL_COUNT], ExternalMemory>) -> Self {
+    /// Construct from a pre-allocated PSRAM buffer (ESP32)
+    #[cfg(not(feature = "simulator"))]
+    pub fn new(buffer: PixelStorage) -> Self {
         Self { 
             buffer, 
             dirty_regions: [None; MAX_DIRTY_RECTS],
@@ -24,6 +44,22 @@ impl BufferData {
             full_redraw_needed: true 
         }
     }
+
+    /// Construct with a heap-allocated buffer (simulator)
+    #[cfg(feature = "simulator")]
+    pub fn new_boxed() -> Self {
+        let buffer: PixelStorage = {
+            let v: alloc::vec::Vec<Rgb565> = alloc::vec![Rgb565::new(0, 0, 0); PIXEL_COUNT];
+            v.into_boxed_slice().try_into().expect("length mismatch")
+        };
+        Self { 
+            buffer, 
+            dirty_regions: [None; MAX_DIRTY_RECTS],
+            dirty_count: 0,
+            full_redraw_needed: true 
+        }
+    }
+
 
     // Mark a region as needing redraw
     pub fn mark_dirty(&mut self, rect: Rectangle) {

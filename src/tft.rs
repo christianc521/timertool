@@ -1,28 +1,54 @@
-use allocator_api2::boxed::Box;
-use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
-use esp_alloc::ExternalMemory;
-use esp_hal::{Async, delay::Delay, dma::{DmaRxBuf, DmaTxBuf}, dma_buffers, gpio::{ Level, Output, OutputConfig }, peripherals::{ DMA_CH0, GPIO4, GPIO9, GPIO10, GPIO11, GPIO12, GPIO13, SPI2 }, spi::master::{Config, Spi, SpiDmaBus}, time::Rate};
-use mipidsi::{Builder, Display, interface::SpiInterface, models::ILI9488Rgb565, options::Orientation};
-use static_cell::StaticCell;
-use crate::{animations::{Animation, FrameData, FrameType}, buffer_backend::BufferData, clock::SessionState, constants::{MAIN_MENU_SCENE, MAX_ANIMATIONS, PIXEL_COUNT, SPI_BUF_SIZE}, scenes_util::{SceneData, SceneManager}};
+// ---------------------------------------------------
+// Conditional Importing (hardware / simulator)
+// ---------------------------------------------------
+#[cfg(feature = "ili9341")]
+use {
+    embedded_hal_bus::spi::{ExclusiveDevice, NoDelay},
+    esp_hal::{
+        Async,
+        delay::Delay,
+        dma::{DmaRxBuf, DmaTxBuf},
+        dma_buffers,
+        gpio::{ Level, Output, OutputConfig },
+        peripherals::{ DMA_CH0, GPIO4, GPIO9, GPIO10, GPIO11, GPIO12, GPIO13, SPI2 },
+        spi::master::{Config, Spi, SpiDmaBus},
+        time::Rate},
+        mipidsi::{Builder, Display, interface::SpiInterface, models::ILI9488Rgb565, options::Orientation},
+        static_cell::StaticCell,
+        allocator_api2::boxed::Box,
+        esp_alloc::ExternalMemory,
+        crate::constants::SPI_BUF_SIZE,
+};
+
+#[cfg(feature = "simulator")]
+use {
+    embedded_graphics_simulator::SimulatorDisplay
+};
+
+use crate::{
+    animations::{Animation, FrameData, FrameType}, buffer_backend::BufferData, color_mixing::gradient::{Gradient, GradientDirection}, constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, EMPTY_SCENE, MAIN_MENU_SCENE, MAX_ANIMATIONS, PIXEL_COUNT, TEST_SCENE}, display_driver::DisplayDriver, payloads::SessionState, scenes_util::{SceneData, SceneManager}
+};
+use crate::payloads::{Packet, Payload};
 
 use embedded_graphics::{
-    pixelcolor::Rgb565, prelude::*, primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment, StyledDrawable}, text::{Baseline, Text}
+    pixelcolor::PixelColor,
+    pixelcolor::{ Rgb565, Rgb888 },
+    prelude::*,
+    primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment, StyledDrawable},
+    text::{Baseline, Text},
 };
 use embedded_graphics_framebuf::FrameBuf;
 use eg_seven_segment::SevenSegmentStyleBuilder;
-extern crate allocator_api2;
 
-use crate::payloads::{Packet, Payload};
+// ---------------------------------------------------
+// Hardware Type Aliases (compilied on ESP)
+// ---------------------------------------------------
 
-enum DisplayDriver {
-    Simulator,
-    Ili9488,
-    Ili9341
-}
+#[cfg(feature = "ili9341")]
 pub type TFTSpiDevice<'spi> = 
     ExclusiveDevice<SpiDmaBus<'spi, Async>, Output<'spi>, NoDelay>;
 
+#[cfg(feature = "ili9341")]
 pub type TFTSpiInterface<'spi> = 
     SpiInterface<
         'static,
@@ -30,10 +56,18 @@ pub type TFTSpiInterface<'spi> =
         Output<'spi>
     >;
 
+#[cfg(feature = "ili9341")]
 pub type TFTDisplay<'spi> =
     Display<TFTSpiInterface<'spi>, ILI9488Rgb565, Output<'spi>>;
 
+#[cfg(feature = "ili9341")]
+pub type HardwareTFT = TFT<TFTDisplay<'static>>;
 
+
+// ---------------------------------------------------
+// Hardware Pin Bundle (compilied on ESP)
+// ---------------------------------------------------
+#[cfg(feature = "ili9341")]
 pub struct SpiPins<'spi> {
         pub dma: DMA_CH0<'spi>,
         pub spi2: SPI2<'spi>,
@@ -45,15 +79,44 @@ pub struct SpiPins<'spi> {
         pub dc: GPIO9<'spi>,
 }
 
-pub struct TFT<'spi>
+// ---------------------------------------------------
+// TFT struct; generic over any DisplayDriver
+// ---------------------------------------------------
+pub struct TFT<D: DisplayDriver>
+where
+    D::Error: core::fmt::Debug,
 {
-    pub display: TFTDisplay<'spi>,
+    pub display: D,
     pub playing_animation: bool,
     frame_buffer: FrameBuf<Rgb565, BufferData>,
     scene_manager: SceneManager
 }
 
-impl<'spi> TFT<'spi> {
+#[cfg(feature = "simulator")]
+impl TFT<SimulatorDisplay<Rgb565>> {
+    pub fn new_simulator() -> Self {
+        let display = SimulatorDisplay::<Rgb565>::new(Size::new(DISPLAY_WIDTH, DISPLAY_HEIGHT));
+
+        // Heap-allocated framebuffer (no PSRAM on desktop)
+        let buffer_data = BufferData::new_boxed();
+        let frame_buffer = FrameBuf::new(buffer_data, DISPLAY_WIDTH as usize, DISPLAY_HEIGHT as usize);
+
+        let mut tft = TFT {
+            display,
+            playing_animation: false,
+            frame_buffer,
+            scene_manager: SceneManager::default(),
+        };
+        tft.initialize_scene();
+        tft
+    }
+}
+
+// ---------------------------------------------------
+// Hardware constructor
+// ---------------------------------------------------
+#[cfg(feature = "ili9341")]
+impl<'spi> TFT<TFTDisplay<'spi>> {
     pub fn new(
         spi_pins: SpiPins<'spi>,
         ) -> Self {
@@ -92,12 +155,12 @@ impl<'spi> TFT<'spi> {
 
         // FrameBuf implementation for PSRAM data
         let boxed_buffer_data = BufferData::new(boxed_buffer_data);
-        let frame_buffer = FrameBuf::new(boxed_buffer_data, 480, 320);
+        let frame_buffer = FrameBuf::new(boxed_buffer_data, DISPLAY_WIDTH as usize, DISPLAY_HEIGHT as usize);
 
         let mut display = Builder::new(ILI9488Rgb565, interface)
             .reset_pin(rst_output)
             .color_order(mipidsi::options::ColorOrder::Rgb)
-            .display_size(320, 480)
+            .display_size(DISPLAY_HEIGHT as u16, DISPLAY_WIDTH as u16)
             .init(&mut Delay::new())
             .unwrap();
 
@@ -115,8 +178,14 @@ impl<'spi> TFT<'spi> {
         tft
     }
 
+}
+
+impl<D: DisplayDriver> TFT<D>
+where
+    D::Error: core::fmt::Debug,
+{
     pub fn initialize_scene(&mut self) {
-        self.load_scene(SceneData::default());
+        self.load_scene(EMPTY_SCENE);
     }
 
     pub fn handle_payload(&mut self, packet: &Packet) {
@@ -164,13 +233,14 @@ impl<'spi> TFT<'spi> {
     }
 
     pub fn load_scene(&mut self, scene: SceneData) {
-        let background_color = Rgb565::new(
-            27, 
-            55, 
-            27);
-        let background_color = Rgb565::GREEN;
+        let end_color = Rgb565::from(Rgb888::new(39, 39, 39));
+        let start_color = Rgb565::from(Rgb888::new(149, 149, 149));
+        let gradient = Gradient::new(start_color, end_color)
+            .direction(GradientDirection::Vertical)
+            .position(Point::zero())
+            .size(Size::new(320, 240));
+        gradient.draw(&mut self.frame_buffer).unwrap();
 
-        self.frame_buffer.clear(background_color).unwrap();
         self.scene_manager.initialize_scene(scene);
 
         for element in self.scene_manager.current_scene.elements {
@@ -205,7 +275,7 @@ impl<'spi> TFT<'spi> {
         let x0 = rect.top_left.x as u16;
         let y0 = rect.top_left.y as u16;
         let x1 = x0 + rect.size.width as u16 - 1;
-        let y1 = y0 + rect.size.height as u16 - 1;
+        let _y1 = y0 + rect.size.height as u16 - 1;
 
         // Set window once for the entire region
         // Row-by-row transfer:
@@ -217,28 +287,9 @@ impl<'spi> TFT<'spi> {
                 let row_y = y0 + row_index as u16;
 
                 self.display
-                    .set_pixels(x0, row_y, x1, row_y, row_pixels.iter().copied())
-                    .unwrap();
+                    .set_pixel_region(x0, row_y, x1, row_y, row_pixels.iter().copied());
             }
     }
-
-    pub fn draw_and_mark_dirty<D: Drawable<Color = Rgb565>>(
-        &mut self,
-        drawable: &D,
-    ) -> Result<D::Output, core::convert::Infallible> 
-    where 
-        D: DrawTarget<Color = Rgb565, Error = core::convert::Infallible>
-    {
-        // Get bounding box before drawing
-        let bounds = drawable.bounding_box();
-
-        let result = drawable.draw(&mut self.frame_buffer)?;
-
-        self.frame_buffer.data.mark_dirty(bounds);
-
-        Ok(result)
-    }
-
 
     pub fn render_next_frame(&mut self) {
 
@@ -260,16 +311,6 @@ impl<'spi> TFT<'spi> {
                 },
                 FrameType::Sprite(frame_data) => { 
                     self.render_frame(frame_data);
-
-                    let sprite_rect = Rectangle::new(
-                        frame_data.position,
-                        Size::new(
-                            frame_data.width as u32,
-                            frame_data.height as u32
-                            )
-                        );
-                    // self.frame_buffer.data.mark_dirty(sprite_rect);
-
                 },
                 FrameType::Empty => empty_count += 1,
             }
@@ -285,19 +326,15 @@ impl<'spi> TFT<'spi> {
         let x1 = x0 + frame_data.width - 1;
         let y1 = y0 + frame_data.height - 1;
 
-        let pixel_count = frame_data.width * frame_data.height;
-        let pixels = unsafe {
-            core::slice::from_raw_parts(
-                frame_data.data.as_ptr() as *const Rgb565,
-                pixel_count as usize
-                )
-        };
+        let pixels = frame_data.data.chunks_exact(2).map(|pair| {
+            let raw = u16::from_le_bytes([ pair[0], pair[1] ]);
+            Rgb565::from(embedded_graphics::pixelcolor::raw::RawU16::new(raw))
+        });
 
-        let _ = &self.display.set_pixels(x0, y0, x1, y1, pixels.iter().copied()).unwrap();
+        self.display.set_pixel_region(x0, y0, x1, y1, pixels);
     }
 
     fn animate_cursor(&mut self, cursor: Rectangle) {
-        let area = &self.display.bounding_box();
         let cursor_style = PrimitiveStyleBuilder::new()
             .stroke_color(Rgb565::new(154, 153, 150))
             .stroke_width(2)
@@ -336,3 +373,4 @@ impl<'spi> TFT<'spi> {
 
     }
 }
+

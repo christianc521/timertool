@@ -1,6 +1,13 @@
 use crate::{animations::Animation, scenes_util::SceneData};
 
-use crate::clock::SessionState;
+#[derive(Debug, PartialEq, Default, Clone, Copy)]
+pub enum SessionState {
+    #[default]
+    MainMenu,
+    Working,
+    Break,
+    Paused
+}
 
 pub struct Packet(pub Payload);
 

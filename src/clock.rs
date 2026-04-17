@@ -4,9 +4,10 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Duration, Ticker, Timer};
 use embassy_sync::channel::Channel;
 use crate::button::{Button, PressDuration};
-use crate::payloads::Packet;
+use crate::display_driver::DisplayDriver;
+use crate::payloads::{ Packet, SessionState };
 use crate::render_display::{ TFTNotifier, TFTRender };
-use crate::tft::TFT;
+use crate::tft::{HardwareTFT, TFT};
 use crate::time_util::Time;
 
 /*
@@ -36,15 +37,6 @@ impl SingleClock {
             ticker.next().await;
         }
     }
-}
-
-#[derive(Debug, PartialEq, Default, Clone, Copy)]
-pub enum SessionState {
-    #[default]
-    MainMenu,
-    Working,
-    Break,
-    Paused
 }
 
 impl SessionState {
@@ -173,7 +165,7 @@ pub struct DoubleTimerSession<'spi>(&'spi SessionOuterNotifier);
 
 impl<'spi> DoubleTimerSession<'spi> {
     pub fn new(
-        tft: TFT<'static>,
+        tft: HardwareTFT,
         spawner: Spawner,
         notifier: &'static SessionNotifier,
     ) -> Result<Self, SpawnError> {

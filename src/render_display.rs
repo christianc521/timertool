@@ -3,7 +3,7 @@ use embassy_futures::select::{select, Either};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Ticker};
 
-use crate::tft::TFT;
+use crate::tft::HardwareTFT;
 use crate::payloads::Packet;
 use crate::constants::FRAME_RATE;
 
@@ -17,7 +17,7 @@ impl TFTRender<'_> {
     }
 
     pub fn new(
-        tft: TFT<'static>,
+        tft: HardwareTFT,
         notifier: &'static TFTNotifier,
         spawner: Spawner
         ) -> Result<Self, SpawnError> {
@@ -33,16 +33,16 @@ impl TFTRender<'_> {
 
 #[embassy_executor::task]
 async fn render_loop(
-    tft: TFT<'static>,
+    tft: HardwareTFT,
     notifier: &'static TFTNotifier
 ) -> ! {
     // safely start state loop
-    let err = inner_render_loop(tft, notifier).await;
+    let _err = inner_render_loop(tft, notifier).await;
 }
 
 // final step; draws to the display
 async fn inner_render_loop(
-    mut tft: TFT<'static>,
+    mut tft: HardwareTFT,
     notifier: &'static TFTNotifier
 ) -> ! {
     let packet = Packet::default();
